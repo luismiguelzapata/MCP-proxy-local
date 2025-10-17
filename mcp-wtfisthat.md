@@ -1,99 +1,127 @@
-# ¿Qué es el MCP (Model Context Protocol) y qué puedes hacer con él?
+# MCP Proxy Local
 
-Este documento resume de forma práctica qué es el MCP (Model Context Protocol) que usa GitHub Copilot / Copilot Chat, qué capacidades ofrece, límites y ejemplos concretos para experimentar con tu proxy local.
+Este proyecto es un proxy local para el Model Context Protocol (MCP) de GitHub Copilot. Permite experimentar, aprender y depurar cómo interactúa Copilot (o cualquier cliente MCP) con el backend de GitHub, usando tu propio token personal (GITHUB_PAT).
 
-## Resumen corto
+## ¿Qué es MCP?
 
-MCP es un protocolo HTTP para que el editor (cliente) y un servicio de modelo (servidor de Copilot) intercambien "contexto" y mensajes del usuario para obtener respuestas generadas por un modelo. Piensa en MCP como la API que permite a Copilot pedir y recibir sugerencias, completar código, o mantener un chat con contexto del repositorio y del editor.
+MCP es el protocolo que usa Copilot para enviar contexto del editor (archivos, cursor, historial de chat) y recibir respuestas generadas por el modelo (completions, explicaciones, documentación, etc).
 
-## ¿Qué tipo de cosas puedes hacer con MCP?
+## ¿Para qué sirve este proxy?
 
-- Solicitar completions y sugerencias de código usando el contexto del archivo y del repositorio.
-- Usar conversación tipo chat (turnos) donde el servidor mantiene o recibe el contexto del estado del editor.
-- Enviar datos de telemetría o metadatos que el servidor pueda usar para priorizar o filtrar sugerencias.
-- En algunos escenarios, enviar archivos o fragmentos de repositorio para que el modelo los use como contexto (limitados por políticas del proveedor).
+- Reenvía peticiones MCP desde tu editor a GitHub, añadiendo tu token de autenticación.
+- Permite inspeccionar, modificar y registrar las peticiones/respuestas MCP.
+- Facilita el aprendizaje y debugging de cómo funciona Copilot internamente.
 
-Nota: GitHub administra qué features están disponibles y qué scopes del token necesitas. MCP es la capa de transporte; las capacidades reales dependen del servidor de backend (Copilot).
+---
 
-## Contrato mínimo (inputs/outputs)
+## Instalación
 
-- Input: peticiones HTTP POST con JSON que describen el tipo de request (p. ej. `complete`, `chat`, `annotation`), contexto (texto, path, repo metadata) y encabezados de autenticación.
-- Output: JSON con la respuesta del modelo, incluyendo fragmentos de texto, tokens, metadatos y a veces instrucciones para el cliente.
-- Errores: respuestas HTTP estándar (4xx/5xx) con JSON de error.
+1. Clona el repositorio y entra en la carpeta:
 
-## Casos de uso prácticos (ejemplos)
+   ```zsh
+   git clone https://github.com/luismiguelzapata/MCP-proxy-local.git
+   cd MCP-proxy-local/mcp-proxy
+   ```
 
-1) Completado simple
-- El cliente envía el contenido del archivo y la posición del cursor.
-- El servidor responde con una sugerencia de código (posible multiple choices, rango y metadatos).
+2. Instala las dependencias:
 
-2) Chat / multi-turn
-- El cliente incluye el historial de mensajes y el servidor produce el siguiente mensaje del asistente.
+   ```zsh
+   npm install
+   ```
 
-3) Análisis de repositorio
-- El cliente puede enviar un resumen del repo o archivos específicos. El servidor puede devolver sugerencias que requieran comprensión del proyecto.
+3. Copia el archivo de ejemplo de entorno y agrega tu token:
 
-## Limitaciones y privacidad
+   ```zsh
+   cp .env.example .env
+   # Edita .env y pon tu GITHUB_PAT
+   ```
 
-- Tu PAT (token) autoriza solicitudes contra el servicio de GitHub; evita compartirlo.
-- No todo el contenido que envies queda "privado": depende de la política del servicio. Evita enviar secretos o credenciales en texto plano.
-- Hay límites de tamaño y rate limits; el servidor puede rechazar peticiones muy grandes.
+---
 
-## Ejemplos y comandos para experimentar con tu proxy local
+## Uso básico
 
-Suponiendo que tienes el proxy corriendo en `http://localhost:8080/mcp/` (como lo configuramos):
+1. Arranca el proxy en segundo plano:
 
-1. Health (ya lo probaste):
+   ```zsh
+   nohup npm start > mcp-proxy.log 2>&1 & echo $! > mcp-proxy.pid
+   ```
 
-```bash
-curl -sS http://localhost:8080/health | jq .
-```
+2. Verifica que está funcionando:
 
-2. Hacer una petición MCP de ejemplo (plantilla genérica)
+   ```zsh
+   curl http://localhost:8080/health
+   # Respuesta esperada: {"ok":true,"target":"https://api.githubcopilot.com/mcp"}
+   ```
 
-```bash
-curl -sS -X POST \
+3. Configura tu editor (VS Code) para usar el MCP local:
+
+   - En `.vscode/mcp.json` pon:
+     ```jsonc
+     {
+       "servers": {
+         "local": { "type": "http", "url": "http://localhost:8080/mcp/" }
+       }
+     }
+     ```
+   - Reinicia VS Code si es necesario.
+
+---
+
+## Ejemplo de petición MCP manual
+
+Puedes enviar peticiones MCP directamente usando `curl`:
+
+```zsh
+curl -X POST \
   -H "Content-Type: application/json" \
-  --data '{"type":"chat.completions","messages":[{"role":"user","content":"Escribe una función en Python que invierta una cadena"}]}' \
+  --data '{"type":"chat.completions","messages":[{"role":"user","content":"Explica qué es una función en Python"}]}' \
   http://localhost:8080/mcp/
 ```
 
-Nota: el body exacto depende del servidor MCP real; la estructura anterior es ilustrativa. Si el backend espera campos distintos, ajusta los nombres.
+La respuesta será un JSON generado por el modelo de Copilot.
 
-3. Inspeccionar logs del proxy para ver headers y requests
+---
 
-```bash
-# ver los últimos logs
-tail -n 200 mcp-proxy.log
+## Logging avanzado (opcional)
 
-# si ejecutas con npm start en primer plano, verás los logs en la terminal
+Si quieres registrar los cuerpos de las peticiones MCP para análisis:
+
+1. En `.env` agrega:
+   ```
+   LOG_MCP_BODIES=true
+   ```
+2. Reinicia el proxy.
+3. Revisa el archivo `mcp-bodies.log` para ver los detalles de cada petición.
+
+**Advertencia:** No actives este logging en entornos públicos ni compartas logs con datos sensibles.
+
+---
+
+## Parar el proxy
+
+```zsh
+kill $(cat mcp-proxy.pid)
+rm mcp-proxy.pid
 ```
 
-## Cómo integrar con VS Code
+---
 
-- En `.vscode/mcp.json` añade o selecciona el servidor local: `http://localhost:8080/mcp/`.
-- Reinicia la extensión (o VS Code) para que tome la nueva configuración.
-- Usa Copilot / Copilot Chat normalmente; las peticiones saldrán por el proxy y podrás inspeccionarlas en `mcp-proxy.log`.
+## Ejercicios recomendados
 
-## Buenas prácticas
-
-- Mantén el PAT en la variable de entorno del sistema o en un gestor de secretos. No lo pongas en `.env` versionado.
-- Limita la exposición de tu proxy (por defecto escucha localhost). Si necesitas acceso remoto, agrega TLS y auth.
-- Para debugging, aumenta el logging solo temporalmente.
-
-## ¿Qué más puedo probar si quiero aprender?
-
-- Añadir logging de bodies (cuidado con datos sensibles) para ver exactamente qué envía la extensión.
-- Construir pequeñas peticiones desde curl o un script para ver respuestas del modelo.
-- Crear un wrapper que convierta eventos del editor (archivo abierto, selección) en peticiones MCP para ver cómo cambia el comportamiento.
+- Envía peticiones manuales y analiza las respuestas.
+- Captura una petición real desde Copilot y compárala con una manual.
+- Modifica el contexto (por ejemplo, el path del archivo) y observa cómo cambia la respuesta.
 
 ---
 
-Si quieres, puedo:
-- Añadir a este archivo ejemplos reales del body que envía Copilot (si conseguimos capturar uno) — yo puedo modificar el proxy para loguear bodies (opcional, con advertencias de seguridad).
-- Añadir una sección con referencias a la spec MCP si quieres profundizar en los campos.
+## Preguntas frecuentes
 
+- **¿Puedo listar archivos de un repositorio usando MCP?**  
+  No, MCP está diseñado para autocompletado, chat y análisis de código, no para operaciones CRUD sobre repositorios.
+
+- **¿Es seguro usar mi GITHUB_PAT aquí?**  
+  Sí, siempre que no compartas tu `.env` ni los logs generados.
 
 ---
 
-Documento generado automáticamente: `mcp-wtfisthat.md` en la raíz del proyecto.
+¿Dudas o sugerencias? Abre un issue en el repositorio.
