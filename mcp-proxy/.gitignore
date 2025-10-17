@@ -1,0 +1,4 @@
+node_modules/
+.env
+mcp-proxy.log
+mcp-proxy.pid
