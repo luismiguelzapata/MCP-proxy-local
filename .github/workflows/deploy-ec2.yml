@@ -1,0 +1,66 @@
+name: Deploy MCP-proxy to EC2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TMP_CRED: ${{ github.workspace }}/tmp.cred
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Read AWS credentials from tmp.cred
+        id: awscreds
+        run: |
+          while IFS='=' read -r key value; do
+            case "$key" in
+              AWS_ACCESS_KEY_ID) echo "AWS_ACCESS_KEY_ID=$value" >> $GITHUB_ENV ;;
+              AWS_SECRET_ACCESS_KEY) echo "AWS_SECRET_ACCESS_KEY=$value" >> $GITHUB_ENV ;;
+              AWS_REGION) echo "AWS_REGION=$value" >> $GITHUB_ENV ;;
+            esac
+          done < "$TMP_CRED"
+
+      - name: Launch EC2 instance
+        id: ec2
+        run: |
+          sudo apt-get update && sudo apt-get install -y awscli jq
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0c94855ba95c71c99 \
+            --instance-type t2.micro \
+            --key-name my-key \
+            --region "$AWS_REGION" \
+            --output json | jq -r '.Instances[0].InstanceId')
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          echo "Launched EC2 instance: $INSTANCE_ID"
+
+      - name: Wait for EC2 to be running
+        run: |
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID" --region "$AWS_REGION"
+          echo "EC2 instance is running."
+
+      - name: Get public IP
+        id: getip
+        run: |
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --region "$AWS_REGION" --output json | jq -r '.Reservations[0].Instances[0].PublicIpAddress')
+          echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
+          echo "EC2 public IP: $PUBLIC_IP"
+
+      - name: Deploy app via SSH
+        run: |
+          echo "Instalando Node.js y clonando repo en EC2..."
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/my-key.pem ubuntu@$PUBLIC_IP "\
+            sudo apt-get update && \
+            sudo apt-get install -y nodejs npm git && \
+            git clone https://x-access-token:${{ secrets.MY_GITHUB_PAT }}@github.com/luismiguelzapata/MCP-proxy-local.git && \
+            cd MCP-proxy-local/mcp-proxy && \
+            npm install && \
+            nohup npm start > mcp-proxy.log 2>&1 &
+          "
+          echo "App desplegada en EC2: $PUBLIC_IP"
+
+      - name: Output EC2 info
+        run: |
+          echo "La app MCP-proxy está corriendo en EC2: $PUBLIC_IP"
