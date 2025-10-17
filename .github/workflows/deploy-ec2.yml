@@ -7,50 +7,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      TMP_CRED: ${{ github.workspace }}/tmp.cred
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
-
-      - name: Read AWS credentials from tmp.cred
-        id: awscreds
-        run: |
-          if [ ! -f "$TMP_CRED" ]; then
-            echo "Error: tmp.cred file not found at $TMP_CRED"
-            exit 1
-          fi
-          echo "Content of tmp.cred directory:"
-          ls -la $(dirname "$TMP_CRED")
-          
-          while IFS='=' read -r key value; do
-            # Remove any whitespace or quotes
-            value=$(echo "$value" | tr -d '"' | tr -d "'" | xargs)
-            case "$key" in
-              AWS_ACCESS_KEY_ID) 
-                echo "AWS_ACCESS_KEY_ID=$value" >> $GITHUB_ENV 
-                echo "Access Key ID set" ;;
-              AWS_SECRET_ACCESS_KEY) 
-                echo "AWS_SECRET_ACCESS_KEY=$value" >> $GITHUB_ENV 
-                echo "Secret Access Key set" ;;
-              AWS_REGION) 
-                echo "AWS_REGION=$value" >> $GITHUB_ENV 
-                echo "Region set to: $value" ;;
-            esac
-          done < "$TMP_CRED"
-          
-          # Verificar que las variables se establecieron
-          if [ -z "$AWS_REGION" ]; then
-            echo "Error: AWS_REGION no está configurada"
-            exit 1
-          fi
-          if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-            echo "Error: AWS_ACCESS_KEY_ID no está configurada"
-            exit 1
-          fi
-          if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-            echo "Error: AWS_SECRET_ACCESS_KEY no está configurada"
-            exit 1
-          fi
 
       - name: Verify AWS Configuration
         run: |
