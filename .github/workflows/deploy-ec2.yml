@@ -26,11 +26,19 @@ jobs:
       - name: Launch EC2 instance
         id: ec2
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
-          sudo ./aws/install
+          if [ -f "/usr/local/bin/aws" ]; then
+            echo "AWS CLI is already installed, updating..."
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install --update
+          else
+            echo "Installing AWS CLI..."
+            sudo apt-get update
+            sudo apt-get install -y unzip
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+          fi
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ami-0c94855ba95c71c99 \
             --instance-type t2.micro \
